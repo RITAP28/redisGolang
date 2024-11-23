@@ -67,7 +67,7 @@ func handleConnection(conn net.Conn) {
 		}
 
 		if _, err := conn.Write(serverResponse); err != nil {
-			slog.Error("Error writing to connection: ", err.Error())
+			slog.Error("Error writing to connection: ", "err", err.Error())
 		}
 
 		// mainly for Efficient Buffer Management, optimizing memory usage
