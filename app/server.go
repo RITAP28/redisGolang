@@ -1,60 +1,96 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"os"
-	"strings"
+	// "strings"
 )
 
 var _ = net.Listen
 var _ = os.Exit
 
+const (
+	receiveBufferSize = 1024
+)
+
 func main() {
-	fmt.Println("Logs from program will appear here");
+	fmt.Println("Logs from program will appear here")
 
-	l, err := net.Listen("tcp", "0.0.0.0:6379");
+	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379");
-		os.Exit(1);
+		slog.Error("Failed to bind to port 6379")
+		os.Exit(1)
 	}
 
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error());
-		os.Exit(1);
+	defer func() {
+		l.Close()
+	}()
+
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			slog.Error("Error accepting connection: ", "err", err.Error())
+			os.Exit(1)
+		}
+
+		go handleConnection(conn)
 	}
-	
+}
+
+func handleConnection(conn net.Conn) {
+	serverResponse := []byte("+PONG\r\n")
+
 	// a buffer of size 1024 bytes is created to store incoming messages from the client
 	// as data from the tcp connection is read in chunks
 	// and a buffer is used to store each chunk temporarily
-	buf := make([]byte, 1024);
+	buf := make([]byte, receiveBufferSize)
 
 	for {
-		dataLength, err := conn.Read(buf);
+		datalength, err := conn.Read(buf)
 		if err != nil {
-			if err.Error() == "EOF" {
-				fmt.Println("Connection closed")
-				break
+			// EOF means End Of File, means the client has closed connections
+			if !errors.Is(err, io.EOF) {
+				slog.Error("reading", "err", err)
 			}
-			fmt.Println("Error reading from connection: ", err.Error());
-			break
+
+			slog.Error("Error reading from connection: ", "err", err.Error())
+			return
 		}
 
-		if dataLength == 0 {
-			fmt.Println("No data read");
-			break
+		if datalength == 0 {
+			fmt.Println("No data available to read")
+			return
 		}
 
-		messages := strings.Split(string(buf), "\r\n")
-
-		for _, message := range messages {
-			switch message {
-			case "PING":
-				conn.Write([]byte("+PONG\r\n"));
-			default:
-				fmt.Println("Received Data: ", string(buf))
-			}
+		if _, err := conn.Write(serverResponse); err != nil {
+			slog.Error("Error writing to connection: ", err.Error())
 		}
+
+		// mainly for Efficient Buffer Management, optimizing memory usage
+		// reads the meaningful data sent from the client by slicing the buffer
+		// for example the buffer is of fixed size 1024 and suppose the client sent only 5 bytes of data
+		// so, cmd will store those 5 bytes and not those extra empty bytes
+		cmd := buf[:datalength]
+
+		slog.Info("Received", "len", len(cmd), "str", cmd)
+
+		// Another method of reading and writing to the data received from the client
+		// messages := strings.Split(string(buf), "\r\n")
+		// for _, message := range messages {
+		// 	switch message {
+		// 	case "PING":
+		// 		if _, err := conn.Write(serverResponse); err != nil {
+		// 			slog.Error("Error writing to connection: ", "err", err.Error())
+		// 			return
+		// 		}
+		// 	default:
+		// 		fmt.Println("Received data: ", string(buf))
+		// 	}
+		// }
+
 	}
 }
