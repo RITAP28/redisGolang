@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"redisGolang/redisproto"
 	// "strings"
 )
 
@@ -91,6 +92,16 @@ func handleConnection(conn net.Conn) {
 		// 		fmt.Println("Received data: ", string(buf))
 		// 	}
 		// }
+
+		_, resp := redisproto.ReadNextRESP(cmd)
+
+		if resp.Type == redisproto.BulkString {
+			fmt.Println("Received bulk string: ", string(resp.Data))
+			response := fmt.Sprintf("+%s\r\n", resp.Data)
+			conn.Write([]byte(response))
+		} else {
+			conn.Write([]byte("-ERR unsupported command\r\n"))
+		}
 
 	}
 }
